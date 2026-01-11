@@ -1,0 +1,22 @@
+name: Canvas MCP
+slug: canvas_mcp
+version: "0.7.0"
+description: Read-only Canvas MCP server (Streamable HTTP) for Home Assistant
+url: https://github.com/jordanlein/Canvas_MCP
+arch:
+  - amd64
+  - aarch64
+startup: services
+init: false
+ingress: false
+ports:
+  "8080/tcp": 8080
+image: ghcr.io/jordanlein/canvas-mcp-addon:{version}
+options:
+  canvas_base_url: "https://yourschool.instructure.com"
+  canvas_api_token: ""
+  mcp_auth_token: ""
+schema:
+  canvas_base_url: str
+  canvas_api_token: password
+  mcp_auth_token: password?

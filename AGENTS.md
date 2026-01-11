@@ -1,6 +1,11 @@
-# Development Guidelines for AI Assistants
+# Development Guidelines for AI Assistants (Codex)
 
-This document contains project-specific rules and guidelines for AI assistants (like Claude) working on the Canvas MCP server.
+This document contains project-specific rules and guidelines for AI assistants (including Codex) working on the Canvas MCP server. It preserves the same rules defined in `CLAUDE.md` (read-only access, secure env-var configuration, minimal normalized outputs, thin-slice changes, and documentation updates) and adds one Codex-specific rule.
+
+## Codex-Specific Rule
+
+- Always show the workspace `/diff` (a clear diff of pending changes) before suggesting any `git commit` or `git push` action.
+- Do not delete or rename `CLAUDE.md`.
 
 ## Core Principles
 
@@ -17,7 +22,7 @@ This document contains project-specific rules and guidelines for AI assistants (
 - Always use `.env.example` as the template for required config
 - Validate required environment variables on startup and fail fast with clear error messages
 
-### 3. Incremental Development
+### 3. Incremental Development (Thin-Slice)
 - Implement tools **one at a time**, in this order:
   1. ✅ `list_courses` (completed)
   2. ✅ `list_assignments` (completed)
@@ -75,7 +80,7 @@ This document contains project-specific rules and guidelines for AI assistants (
   - Configuration requirements change
   - New tools are added
   - Setup instructions change
-  - Claude Desktop config examples change
+  - Claude Desktop or Codex config examples change
 - Keep README accurate and user-friendly for non-technical users
 
 ## Implementation Patterns
@@ -120,7 +125,7 @@ This document contains project-specific rules and guidelines for AI assistants (
 5. Test error cases (invalid IDs, missing config, etc.)
 
 ### Integration Testing
-- Test in Claude Desktop after each new tool
+- Test in Claude Desktop (and Codex) after each new tool
 - Verify natural language queries work ("What courses am I in?")
 - Check that responses are clear and actionable
 
@@ -147,3 +152,4 @@ This document contains project-specific rules and guidelines for AI assistants (
 **Planned:**
 - Additional tools can be added after approval
 - All v1 core tools plus convenience tools are now implemented
+

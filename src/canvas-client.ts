@@ -5,15 +5,45 @@
 export interface CanvasConfig {
   baseUrl: string;
   apiToken: string;
+  timeoutMs?: number;
 }
 
 export class CanvasClient {
   private baseUrl: string;
   private apiToken: string;
+  private timeoutMs: number;
 
   constructor(config: CanvasConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, ''); // Remove trailing slash
     this.apiToken = config.apiToken;
+    this.timeoutMs = typeof config.timeoutMs === 'number' && isFinite(config.timeoutMs) && config.timeoutMs > 0
+      ? Math.floor(config.timeoutMs)
+      : 15000; // sensible default: 15s
+  }
+
+  /**
+   * Perform a fetch with connect+read timeout using AbortController
+   */
+  private async fetchWithTimeout(input: string, init: RequestInit = {}): Promise<Response> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const res = await fetch(input, {
+        ...init,
+        signal: controller.signal,
+      });
+      return res;
+    } catch (err: any) {
+      if (err && (err.name === 'AbortError' || err.code === 'ABORT_ERR')) {
+        const e = new Error(`Canvas request timed out after ${this.timeoutMs}ms`);
+        (e as any).code = 'timeout';
+        throw e;
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   /**
@@ -59,7 +89,7 @@ export class CanvasClient {
     let nextUrl: string | undefined = url.toString();
 
     while (nextUrl) {
-      const response = await fetch(nextUrl, {
+      const response = await this.fetchWithTimeout(nextUrl, {
         headers: {
           'Authorization': `Bearer ${this.apiToken}`,
           'Accept': 'application/json',
@@ -67,10 +97,19 @@ export class CanvasClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Canvas API error: ${response.status} ${response.statusText}`);
+        const e = new Error(`Canvas API error: ${response.status} ${response.statusText}`);
+        (e as any).code = 'canvas_api_error';
+        throw e;
       }
 
-      const data = await response.json() as T[];
+      let data: T[];
+      try {
+        data = await response.json() as T[];
+      } catch (e) {
+        const err = new Error('Invalid Canvas API response');
+        (err as any).code = 'invalid_response';
+        throw err;
+      }
       results.push(...data);
 
       // Check for next page in Link header
@@ -250,7 +289,7 @@ export class CanvasClient {
       'include[]': 'assignment',
     });
 
-    const response = await fetch(`${url}?${params.toString()}`, {
+    const response = await this.fetchWithTimeout(`${url}?${params.toString()}`, {
       headers: {
         'Authorization': `Bearer ${this.apiToken}`,
         'Accept': 'application/json',
@@ -258,10 +297,19 @@ export class CanvasClient {
     });
 
     if (!response.ok) {
-      throw new Error(`Canvas API error: ${response.status} ${response.statusText}`);
+      const e = new Error(`Canvas API error: ${response.status} ${response.statusText}`);
+      (e as any).code = 'canvas_api_error';
+      throw e;
     }
 
-    const submission = await response.json() as RawSubmission;
+    let submission: RawSubmission;
+    try {
+      submission = await response.json() as RawSubmission;
+    } catch (e) {
+      const err = new Error('Invalid Canvas API response');
+      (err as any).code = 'invalid_response';
+      throw err;
+    }
 
     // Normalize output - return only essential fields
     return {
@@ -324,7 +372,7 @@ export class CanvasClient {
         'type[]': 'StudentEnrollment',
       });
 
-      const response = await fetch(`${url}?${params.toString()}`, {
+      const response = await this.fetchWithTimeout(`${url}?${params.toString()}`, {
         headers: {
           'Authorization': `Bearer ${this.apiToken}`,
           'Accept': 'application/json',
@@ -423,8 +471,15 @@ export class CanvasClient {
         last_updated: null, // Not provided by Canvas API in this endpoint
       };
 
-    } catch (error) {
+    } catch (error: any) {
       // Network error or other failure - return unavailable gracefully
+      if (error && error.code === 'timeout') {
+        return {
+          course_id: Number(courseId),
+          available: false,
+          reason: 'hidden_or_unavailable',
+        };
+      }
       return {
         course_id: Number(courseId),
         available: false,

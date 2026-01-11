@@ -4,6 +4,12 @@
 
 import { CanvasClient } from './canvas-client.js';
 
+function makeError(code: string, message: string): Error {
+  const err = new Error(message);
+  (err as any).code = code;
+  return err;
+}
+
 export const TOOLS = [
   {
     name: 'list_courses',
@@ -122,7 +128,7 @@ export async function handleToolCall(
       const statusFilter = (args.status_filter as 'all' | 'missing' | 'unsubmitted' | 'submitted') || 'all';
 
       if (!courseId) {
-        throw new Error('course_id is required');
+        throw makeError('invalid_arguments', 'course_id is required');
       }
 
       const assignments = await canvasClient.listAssignments(courseId, includeFuture, statusFilter);
@@ -139,10 +145,10 @@ export async function handleToolCall(
       const assignmentId = args.assignment_id as string | number;
 
       if (!courseId) {
-        throw new Error('course_id is required');
+        throw makeError('invalid_arguments', 'course_id is required');
       }
       if (!assignmentId) {
-        throw new Error('assignment_id is required');
+        throw makeError('invalid_arguments', 'assignment_id is required');
       }
 
       const submission = await canvasClient.getSubmissionStatus(courseId, assignmentId);
@@ -158,7 +164,7 @@ export async function handleToolCall(
       const courseId = args.course_id as string | number;
 
       if (!courseId) {
-        throw new Error('course_id is required');
+        throw makeError('invalid_arguments', 'course_id is required');
       }
 
       const grades = await canvasClient.getCourseGrades(courseId);
@@ -185,6 +191,6 @@ export async function handleToolCall(
     }
 
     default:
-      throw new Error(`Unknown tool: ${toolName}`);
+      throw makeError('invalid_tool', `Unknown tool: ${toolName}`);
   }
 }

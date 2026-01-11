@@ -1,6 +1,6 @@
 # Canvas MCP Server
 
-Read-only MCP server for querying Canvas LMS courses, assignments, and grades.
+Read-only **Remote MCP server** (Streamable HTTP transport) for querying Canvas LMS courses, assignments, and grades.
 
 ## Setup
 
@@ -17,6 +17,11 @@ Read-only MCP server for querying Canvas LMS courses, assignments, and grades.
    Edit `.env` and add:
    - `CANVAS_BASE_URL`: Your Canvas instance URL (e.g., `https://yourschool.instructure.com`)
    - `CANVAS_API_TOKEN`: Your Canvas personal access token
+   - `CANVAS_TIMEOUT_MS` (optional, default `15000`): Timeout in milliseconds for outbound Canvas API requests (connect + read)
+   - `PORT` (optional, default `8080`): HTTP server port
+   - `BASE_PATH` (optional, default `/mcp`): MCP endpoint path
+   - `ALLOWED_ORIGINS` (optional): Comma-separated list of allowed origins for Origin validation (default: `http://localhost:*,http://127.0.0.1:*`)
+   - `MCP_AUTH_TOKEN` (optional): If set, require `Authorization: Bearer <token>` on all `/mcp` requests (both GET and POST)
 
    **To get your API token:**
    - Log into Canvas
@@ -31,51 +36,139 @@ Read-only MCP server for querying Canvas LMS courses, assignments, and grades.
    npm run build
    ```
 
-## Local Testing
+## Running the Server
 
-**Quick test (standalone):**
+**Start the HTTP server:**
 ```bash
 npm run dev
 ```
 
-After running, type this JSON request and press Enter twice:
-```json
-{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}
+The server will start on `http://0.0.0.0:8080` (or your configured PORT) with:
+- MCP endpoint: `http://localhost:8080/mcp`
+- Health check: `http://localhost:8080/healthz`
+
+**Test health check:**
+```bash
+curl http://localhost:8080/healthz
 ```
 
-You should see the available tools listed.
+Expected response: `OK`
 
-**Test list_courses:**
-```json
-{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_courses","arguments":{}}}
+**Note:** The MCP endpoint (`/mcp`) uses **Streamable HTTP transport** (Server-Sent Events) and should be accessed by MCP clients (like Claude Desktop), not directly via curl.
+
+**Security & Ops Features:**
+- Origin validation protects against unauthorized cross-origin requests
+- DNS rebinding protection validates the Host header
+- Supports localhost, private IP ranges (192.168.x.x, 10.x.x.x, 172.16-31.x.x), and .local domains (mDNS)
+- Configure allowed origins via `ALLOWED_ORIGINS` environment variable
+- Outbound Canvas API timeouts via `CANVAS_TIMEOUT_MS` (default 15000ms)
+- Structured per-request logging for every MCP tool call (never logs secrets)
+ - Optional Bearer auth for `/mcp` endpoint using `MCP_AUTH_TOKEN`
+
+**MCP Auth (optional):**
+- If `MCP_AUTH_TOKEN` is set, all `/mcp` requests must include header: `Authorization: Bearer <token>`
+- Auth is enforced after Host/Origin validation
+- On missing/invalid token, server returns `401` with `{ "error": "unauthorized" }`
+- The token is never logged
+
+## Docker Deployment (Raspberry Pi / Production)
+
+This project includes Docker support for production deployment on Raspberry Pi or any ARM/x64 system.
+
+### Prerequisites
+- Docker installed on your system
+- Docker Compose installed
+
+### Deployment Steps
+
+1. **Clone the repository to your Raspberry Pi:**
+   ```bash
+   git clone <your-repo-url>
+   cd Canvas_MCP
+   ```
+
+2. **Create `.env` file with your Canvas credentials:**
+   ```bash
+   cp .env.example .env
+   nano .env
+   ```
+
+   Set your Canvas credentials:
+   ```env
+   CANVAS_BASE_URL=https://yourschool.instructure.com
+   CANVAS_API_TOKEN=your_canvas_api_token_here
+   # Optional: outbound Canvas API timeout (ms)
+   CANVAS_TIMEOUT_MS=15000
+   # Optional: require Bearer token auth for /mcp
+   MCP_AUTH_TOKEN=choose-a-strong-token
+   ```
+
+3. **Build and start the container:**
+   ```bash
+   docker-compose up -d
+   ```
+
+4. **Verify the container is running:**
+   ```bash
+   docker-compose ps
+   ```
+
+5. **Check logs:**
+   ```bash
+   docker-compose logs -f
+   ```
+
+6. **Test the server:**
+   ```bash
+   curl http://localhost:8080/healthz
+   ```
+
+### Docker Compose Commands
+
+**Start the server:**
+```bash
+docker-compose up -d
 ```
 
-**Test list_assignments** (replace `123456` with a real course ID from list_courses):
-```json
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_assignments","arguments":{"course_id":"123456"}}}
+**Stop the server:**
+```bash
+docker-compose down
 ```
 
-**Filter missing assignments:**
-```json
-{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"list_assignments","arguments":{"course_id":"123456","status_filter":"missing"}}}
+**Restart the server:**
+```bash
+docker-compose restart
 ```
 
-**Get submission status** (replace with real course_id and assignment_id):
-```json
-{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"get_submission_status","arguments":{"course_id":"123456","assignment_id":"789012"}}}
+**View logs:**
+```bash
+docker-compose logs -f canvas-mcp
 ```
 
-**Get course grades** (replace with real course_id):
-```json
-{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"get_course_grades","arguments":{"course_id":"123456"}}}
+**Rebuild after code changes:**
+```bash
+docker-compose down
+docker-compose build --no-cache
+docker-compose up -d
 ```
 
-**List upcoming assignments** (next 7 days, include overdue):
-```json
-{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"list_upcoming","arguments":{"days":7,"include_overdue":true}}}
+### Configuration
+
+The container automatically:
+- Restarts unless explicitly stopped (`restart: unless-stopped`)
+- Exposes port 8080
+- Includes health checks
+- Runs as non-root user for security
+
+To change the port, edit `docker-compose.yml`:
+```yaml
+ports:
+  - "3000:8080"  # External:Internal
 ```
 
 ## Connecting to Claude Desktop
+
+This is a **remote MCP server** using Streamable HTTP transport. Configure Claude Desktop to connect to the running server.
 
 Add to Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
 
@@ -83,31 +176,39 @@ Add to Claude Desktop config (`~/Library/Application Support/Claude/claude_deskt
 {
   "mcpServers": {
     "canvas": {
-      "command": "node",
-      "args": [
-        "/Users/jordanleinberger/Documents/Canvas_MCP/dist/index.js"
-      ],
-      "env": {
-        "CANVAS_BASE_URL": "https://yourschool.instructure.com",
-        "CANVAS_API_TOKEN": "your_token_here"
-      }
+      "url": "http://localhost:8080/mcp"
     }
   }
 }
 ```
 
-Or reference the `.env` file by setting `cwd`:
+**For Raspberry Pi or remote servers:**
 ```json
 {
   "mcpServers": {
     "canvas": {
-      "command": "node",
-      "args": ["dist/index.js"],
-      "cwd": "/Users/jordanleinberger/Documents/Canvas_MCP"
+      "url": "http://raspberrypi.local:8080/mcp"
     }
   }
 }
 ```
+
+Or use the IP address:
+```json
+{
+  "mcpServers": {
+    "canvas": {
+      "url": "http://192.168.1.100:8080/mcp"
+    }
+  }
+}
+```
+
+**Important:**
+1. The server must be **running** before starting Claude Desktop
+2. Start with Docker: `docker-compose up -d` or locally: `npm run dev`
+3. Verify the server is running: `curl http://localhost:8080/healthz`
+4. For remote connections, ensure port 8080 is accessible (firewall rules, etc.)
 
 Restart Claude Desktop, then try:
 - "What Canvas courses am I enrolled in?"

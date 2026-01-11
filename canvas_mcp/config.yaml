@@ -1,6 +1,6 @@
 name: Canvas MCP
 slug: canvas_mcp
-version: "0.7.0"
+version: "0.7.3"
 description: Read-only Canvas MCP server (Streamable HTTP) for Home Assistant
 url: https://github.com/jordanlein/Canvas_MCP
 arch:
